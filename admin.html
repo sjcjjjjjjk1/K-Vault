@@ -454,6 +454,72 @@
     html[data-theme="dark"] .token-status-text.is-enabled {
       color: #8edc8e;
     }
+    .ui-design-panel {
+      display: grid;
+      gap: 14px;
+      line-height: 1.6;
+      color: #303133;
+    }
+    .ui-design-section {
+      border: 1px solid rgba(17, 24, 39, 0.08);
+      border-radius: 12px;
+      padding: 12px;
+      background: rgba(250, 251, 252, 0.9);
+    }
+    .ui-design-section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #1f2937;
+    }
+    .ui-design-inline {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .ui-design-slider {
+      padding: 2px 4px 4px;
+    }
+    .ui-design-tip {
+      margin-top: 8px;
+      color: #667085;
+      font-size: 12px;
+    }
+    .ui-design-value {
+      min-width: 46px;
+      text-align: right;
+      color: #475467;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .ui-design-alert .el-message-box {
+      width: min(760px, 92vw) !important;
+    }
+    .ui-design-alert .el-message-box__message {
+      margin: 0;
+      max-height: min(70vh, 640px);
+      overflow: auto;
+      padding-right: 4px;
+    }
+    html[data-theme="dark"] .ui-design-section {
+      border-color: rgba(148, 163, 184, 0.28);
+      background: rgba(17, 24, 39, 0.7);
+    }
+    html[data-theme="dark"] .ui-design-panel {
+      color: #d7e1f5;
+    }
+    html[data-theme="dark"] .ui-design-section-title {
+      color: #f1f5ff;
+    }
+    html[data-theme="dark"] .ui-design-tip,
+    html[data-theme="dark"] .ui-design-value {
+      color: #a9b8d6;
+    }
     @media (max-width: 768px) {
       .token-scope-group {
         grid-template-columns: 1fr;
@@ -598,9 +664,10 @@
                 <el-dropdown-item command="dataSaver" :class="{ 'el-dropdown-menu__item--selected': loadMode === 'dataSaver' }"><i class="fas fa-bolt"></i> 省流模式</el-dropdown-item>
                 <el-dropdown-item command="noImage" :class="{ 'el-dropdown-menu__item--selected': loadMode === 'noImage' }"><i class="fas fa-eye-slash"></i> 无图模式</el-dropdown-item>
                 <el-dropdown-item command="safeMode" divided :class="{ 'el-dropdown-menu__item--selected': safeMode }"><i class="fas fa-shield-alt"></i> {{ safeMode ? '✓' : '' }} 安全模式(NSFW)</el-dropdown-item>
-                <el-dropdown-item command="loginBackground" divided><i class="fas fa-image"></i> 登录页背景设置</el-dropdown-item>
+                <el-dropdown-item command="uiDesign" divided><i class="fas fa-sliders-h"></i> 前端 UI 设计</el-dropdown-item>
               </el-dropdown-menu>
             </el-dropdown>
+            <el-tooltip content="前端 UI 设计" placement="bottom"><i class="fas fa-sliders-h" @click="showUiDesignSettingsPanel"></i></el-tooltip>
             <i class="fas fa-sign-out-alt" @click="handleLogout"></i>
           </div>
         </div>
@@ -3292,8 +3359,8 @@
           this.safeMode = !this.safeMode;
           localStorage.setItem('safeMode', this.safeMode);
           this.$message.success(this.safeMode ? '安全模式已开启' : '安全模式已关闭');
-        } else if (command === 'loginBackground') {
-          this.showLoginBackgroundSettings();
+        } else if (command === 'loginBackground' || command === 'uiDesign') {
+          this.showUiDesignSettingsPanel();
         } else {
           this.loadMode = command;
           localStorage.setItem('loadMode', command);
@@ -3303,6 +3370,8 @@
       },
       // 登录页背景设置
       showLoginBackgroundSettings() {
+        this.showUiDesignSettingsPanel();
+        return;
         const currentBg = localStorage.getItem('loginBackgroundUrl') || '';
         const currentMode = localStorage.getItem('loginBackgroundMode') || 'gradient';
         
@@ -3354,6 +3423,301 @@
         });
       },
       // 根据加载模式获取图片显示状态
+      async uploadUiDesignBackgroundFile(file) {
+        if (!file) return '';
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('folderPath', this.folderPath || '');
+        const response = await fetch(`${this.baseURL}/upload`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !Array.isArray(payload) || !payload[0]?.src) {
+          const message = Array.isArray(payload) ? payload[0]?.error : payload?.error;
+          throw new Error(message || '上传失败');
+        }
+        return `${this.baseURL}${payload[0].src}`;
+      },
+      showUiDesignSettingsPanel() {
+        const manager = window.UIDesignManager;
+        if (!manager || typeof manager.getSettings !== 'function') {
+          this.$message.error('当前版本不支持前端 UI 设计设置');
+          return;
+        }
+
+        const snapshot = manager.getSettings();
+        const defaults = typeof manager.getDefaults === 'function'
+          ? manager.getDefaults()
+          : manager.getSettings();
+
+        const clamp = (value, min, max) => {
+          const n = Number(value);
+          if (!Number.isFinite(n)) return min;
+          return Math.min(max, Math.max(min, n));
+        };
+        const escapeAttr = (value) =>
+          String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        const checked = (condition) => (condition ? 'checked' : '');
+
+        const html = `
+          <div class="ui-design-panel" id="uiDesignPanel">
+            <div class="ui-design-section">
+              <div class="ui-design-section-title"><i class="fas fa-image"></i> 背景图设置（全站）</div>
+              <div class="ui-design-inline">
+                <input id="uiGlobalBgUrl" type="text" value="${escapeAttr(snapshot.globalBackgroundUrl)}" placeholder="https://example.com/background.jpg" style="flex:1; min-width: 260px; height:34px; padding: 0 10px; border-radius: 8px; border:1px solid #d0d5dd;">
+                <button type="button" id="uiUploadGlobalBtn" class="el-button el-button--small"><i class="fas fa-upload"></i> 上传</button>
+                <input id="uiUploadGlobalInput" type="file" accept="image/*" style="display:none;">
+                <button type="button" id="uiClearGlobalBg" class="el-button el-button--small">清除</button>
+              </div>
+              <div class="ui-design-tip">支持远程 URL 或上传图片；应用到首页、画廊、后台、WebDAV 及其它可见页面。</div>
+            </div>
+
+            <div class="ui-design-section">
+              <div class="ui-design-section-title"><i class="fas fa-sign-in-alt"></i> 登录页背景</div>
+              <div class="ui-design-inline">
+                <label><input type="radio" name="uiLoginMode" value="follow-global" ${checked(snapshot.loginBackgroundMode !== 'custom')}> 与全站背景保持一致</label>
+                <label><input type="radio" name="uiLoginMode" value="custom" ${checked(snapshot.loginBackgroundMode === 'custom')}> 仅登录页单独设置</label>
+              </div>
+              <div class="ui-design-inline" id="uiLoginCustomRow">
+                <input id="uiLoginBgUrl" type="text" value="${escapeAttr(snapshot.loginBackgroundUrl)}" placeholder="https://example.com/login-bg.jpg" style="flex:1; min-width: 240px; height:34px; padding: 0 10px; border-radius: 8px; border:1px solid #d0d5dd;">
+                <button type="button" id="uiUploadLoginBtn" class="el-button el-button--small"><i class="fas fa-upload"></i> 上传</button>
+                <input id="uiUploadLoginInput" type="file" accept="image/*" style="display:none;">
+                <button type="button" id="uiClearLoginBg" class="el-button el-button--small">清除</button>
+              </div>
+            </div>
+
+            <div class="ui-design-section">
+              <div class="ui-design-section-title"><i class="fas fa-clone"></i> 胶囊/卡片透明度</div>
+              <div class="ui-design-slider">
+                <div class="ui-design-inline" style="justify-content: space-between; width:100%;">
+                  <span>卡片透明度</span>
+                  <span class="ui-design-value" id="uiCardOpacityValue"></span>
+                </div>
+                <input id="uiCardOpacity" type="range" min="0" max="100" value="${clamp(snapshot.cardOpacity, 0, 100)}" style="width:100%;">
+              </div>
+              <div class="ui-design-slider">
+                <div class="ui-design-inline" style="justify-content: space-between; width:100%;">
+                  <span>毛玻璃模糊强度</span>
+                  <span class="ui-design-value" id="uiCardBlurValue"></span>
+                </div>
+                <input id="uiCardBlur" type="range" min="0" max="32" value="${clamp(snapshot.cardBlur, 0, 32)}" style="width:100%;">
+              </div>
+            </div>
+
+            <div class="ui-design-section">
+              <div class="ui-design-section-title"><i class="fas fa-wave-square"></i> 动态背景特效</div>
+              <div class="ui-design-inline">
+                <label><input type="radio" name="uiEffectStyle" value="none" ${checked(snapshot.effectStyle === 'none')}> 无特效</label>
+                <label><input type="radio" name="uiEffectStyle" value="math" ${checked(snapshot.effectStyle === 'math')}> 数学符号浮动</label>
+                <label><input type="radio" name="uiEffectStyle" value="particle" ${checked(snapshot.effectStyle === 'particle')}> 极简粒子线网</label>
+                <label><input type="radio" name="uiEffectStyle" value="texture" ${checked(snapshot.effectStyle === 'texture')}> 细腻纸纹叠加</label>
+              </div>
+              <div class="ui-design-slider">
+                <div class="ui-design-inline" style="justify-content: space-between; width:100%;">
+                  <span>特效强度</span>
+                  <span class="ui-design-value" id="uiEffectIntensityValue"></span>
+                </div>
+                <input id="uiEffectIntensity" type="range" min="0" max="100" value="${clamp(snapshot.effectIntensity, 0, 100)}" style="width:100%;">
+              </div>
+              <div class="ui-design-inline" style="justify-content: space-between;">
+                <label><input id="uiOptimizeMobile" type="checkbox" ${checked(snapshot.optimizeMobile !== false)}> 移动端自动优化特效</label>
+                <span class="ui-design-tip" style="margin-top:0;">移动端将自动降级节点数量，降低 CPU 占用。</span>
+              </div>
+            </div>
+
+            <div class="ui-design-inline" style="justify-content:flex-end;">
+              <button type="button" id="uiResetDefaults" class="el-button el-button--small">恢复默认</button>
+            </div>
+          </div>
+        `;
+
+        const readValues = () => {
+          const loginMode =
+            document.querySelector('input[name="uiLoginMode"]:checked')?.value ||
+            'follow-global';
+          const effectStyle =
+            document.querySelector('input[name="uiEffectStyle"]:checked')?.value ||
+            'none';
+          return {
+            baseColor: '#fafaf8',
+            globalBackgroundUrl: document.getElementById('uiGlobalBgUrl')?.value?.trim() || '',
+            loginBackgroundMode: loginMode,
+            loginBackgroundUrl: document.getElementById('uiLoginBgUrl')?.value?.trim() || '',
+            cardOpacity: clamp(document.getElementById('uiCardOpacity')?.value, 0, 100),
+            cardBlur: clamp(document.getElementById('uiCardBlur')?.value, 0, 32),
+            effectStyle,
+            effectIntensity: clamp(document.getElementById('uiEffectIntensity')?.value, 0, 100),
+            optimizeMobile: !!document.getElementById('uiOptimizeMobile')?.checked
+          };
+        };
+
+        const updateValueLabels = () => {
+          const opacityEl = document.getElementById('uiCardOpacityValue');
+          const blurEl = document.getElementById('uiCardBlurValue');
+          const intensityEl = document.getElementById('uiEffectIntensityValue');
+          if (opacityEl) {
+            opacityEl.textContent = `${Math.round(clamp(document.getElementById('uiCardOpacity')?.value, 0, 100))}%`;
+          }
+          if (blurEl) {
+            blurEl.textContent = `${Math.round(clamp(document.getElementById('uiCardBlur')?.value, 0, 32))}px`;
+          }
+          if (intensityEl) {
+            intensityEl.textContent = `${Math.round(clamp(document.getElementById('uiEffectIntensity')?.value, 0, 100))}%`;
+          }
+        };
+
+        const toggleLoginCustomRow = () => {
+          const loginMode =
+            document.querySelector('input[name="uiLoginMode"]:checked')?.value ||
+            'follow-global';
+          const row = document.getElementById('uiLoginCustomRow');
+          if (!row) return;
+          const enabled = loginMode === 'custom';
+          row.style.opacity = enabled ? '1' : '0.5';
+          row.style.pointerEvents = enabled ? 'auto' : 'none';
+        };
+
+        const applyPreview = () => {
+          updateValueLabels();
+          toggleLoginCustomRow();
+          const values = readValues();
+          if (typeof manager.previewSettings === 'function') {
+            manager.previewSettings(values);
+          } else if (typeof manager.setSettings === 'function') {
+            manager.setSettings(values, { persist: false, silent: true });
+          }
+        };
+
+        const applyValuesToForm = (values) => {
+          const state = Object.assign({}, defaults, values || {});
+          const globalUrl = document.getElementById('uiGlobalBgUrl');
+          const loginUrl = document.getElementById('uiLoginBgUrl');
+          const cardOpacity = document.getElementById('uiCardOpacity');
+          const cardBlur = document.getElementById('uiCardBlur');
+          const effectIntensity = document.getElementById('uiEffectIntensity');
+          const optimizeMobile = document.getElementById('uiOptimizeMobile');
+          if (globalUrl) globalUrl.value = state.globalBackgroundUrl || '';
+          if (loginUrl) loginUrl.value = state.loginBackgroundUrl || '';
+          if (cardOpacity) cardOpacity.value = clamp(state.cardOpacity, 0, 100);
+          if (cardBlur) cardBlur.value = clamp(state.cardBlur, 0, 32);
+          if (effectIntensity) effectIntensity.value = clamp(state.effectIntensity, 0, 100);
+          if (optimizeMobile) optimizeMobile.checked = state.optimizeMobile !== false;
+          const loginModeRadio = document.querySelector(`input[name="uiLoginMode"][value="${state.loginBackgroundMode === 'custom' ? 'custom' : 'follow-global'}"]`);
+          if (loginModeRadio) loginModeRadio.checked = true;
+          const effectRadio = document.querySelector(`input[name="uiEffectStyle"][value="${state.effectStyle || 'none'}"]`);
+          if (effectRadio) effectRadio.checked = true;
+        };
+
+        const bindUpload = (triggerId, inputId, targetInputId) => {
+          const trigger = document.getElementById(triggerId);
+          const fileInput = document.getElementById(inputId);
+          const targetInput = document.getElementById(targetInputId);
+          if (!trigger || !fileInput || !targetInput) return;
+
+          trigger.addEventListener('click', () => fileInput.click());
+          fileInput.addEventListener('change', async () => {
+            const file = fileInput.files?.[0];
+            if (!file) return;
+            const loading = this.$message({ message: '正在上传背景图...', duration: 0 });
+            try {
+              const url = await this.uploadUiDesignBackgroundFile(file);
+              targetInput.value = url;
+              applyPreview();
+              this.$message.success('背景图上传成功');
+            } catch (error) {
+              this.$message.error(`背景图上传失败: ${error.message || error}`);
+            } finally {
+              loading.close();
+              fileInput.value = '';
+            }
+          });
+        };
+
+        this.$alert(html, '前端 UI 设计', {
+          customClass: 'ui-design-alert',
+          dangerouslyUseHTMLString: true,
+          showCancelButton: true,
+          closeOnClickModal: false,
+          confirmButtonText: '保存并应用',
+          cancelButtonText: '取消',
+          beforeClose: (action, instance, done) => {
+            if (action === 'confirm') {
+              const values = readValues();
+              if (typeof manager.setSettings === 'function') {
+                manager.setSettings(values, { persist: true });
+              }
+              this.$message.success('前端 UI 设计设置已保存');
+              done();
+              return;
+            }
+            if (typeof manager.restorePersisted === 'function') {
+              manager.restorePersisted();
+            }
+            done();
+          }
+        });
+
+        this.$nextTick(() => {
+          applyValuesToForm(snapshot);
+          updateValueLabels();
+          toggleLoginCustomRow();
+          applyPreview();
+
+          const listenIds = [
+            'uiGlobalBgUrl',
+            'uiLoginBgUrl',
+            'uiCardOpacity',
+            'uiCardBlur',
+            'uiEffectIntensity',
+            'uiOptimizeMobile'
+          ];
+          listenIds.forEach((id) => {
+            const node = document.getElementById(id);
+            if (!node) return;
+            node.addEventListener('input', applyPreview);
+            node.addEventListener('change', applyPreview);
+          });
+
+          document
+            .querySelectorAll('input[name="uiLoginMode"], input[name="uiEffectStyle"]')
+            .forEach((node) => node.addEventListener('change', applyPreview));
+
+          const clearGlobalBtn = document.getElementById('uiClearGlobalBg');
+          if (clearGlobalBtn) {
+            clearGlobalBtn.addEventListener('click', () => {
+              const input = document.getElementById('uiGlobalBgUrl');
+              if (input) input.value = '';
+              applyPreview();
+            });
+          }
+
+          const clearLoginBtn = document.getElementById('uiClearLoginBg');
+          if (clearLoginBtn) {
+            clearLoginBtn.addEventListener('click', () => {
+              const input = document.getElementById('uiLoginBgUrl');
+              if (input) input.value = '';
+              applyPreview();
+            });
+          }
+
+          const resetBtn = document.getElementById('uiResetDefaults');
+          if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+              applyValuesToForm(defaults);
+              applyPreview();
+            });
+          }
+
+          bindUpload('uiUploadGlobalBtn', 'uiUploadGlobalInput', 'uiGlobalBgUrl');
+          bindUpload('uiUploadLoginBtn', 'uiUploadLoginInput', 'uiLoginBgUrl');
+        });
+      },
       shouldShowImage(item) {
         if (this.loadMode === 'noImage') return false;
         if (this.loadMode === 'dataSaver') {
